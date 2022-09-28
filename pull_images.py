@@ -14,7 +14,7 @@ import contextlib
 import yaml
 
 import shapefile  # pip install pyshp
-import mapillary.interface as mly
+import mapillary.interface as mly  # pip install mapillary
 
 # Optional, http://stackoverflow.com/a/1557906/724176
 try:
@@ -29,7 +29,8 @@ MAX_TRIES = 10  # Used to set number of maximum attempts at finding a non-filter
 
 with open("api_key.yaml", "r") as ymlfile:
     key = yaml.load(ymlfile, Loader=yaml.FullLoader)
-mly.set_access_token(key['token'])
+token = key['token']
+mly.set_access_token(token)
 
 parser = argparse.ArgumentParser(
     description="Get random Street View images from within the borders of a given country. http://bboxfinder.com may "
@@ -165,7 +166,7 @@ try:
                 if ii >= len(images['features']):
                     break
                 img_id = images['features'][ii]['properties']['id']
-                url_request = f"https://graph.mapillary.com/{img_id}?access_token={TOKEN}&fields=thumb_original_url"
+                url_request = f"https://graph.mapillary.com/{img_id}?access_token={token}&fields=thumb_original_url"
                 response = requests.get(url_request).json()  # Query the API for the original image URL
                 try:
                     url = response['thumb_original_url']
@@ -223,12 +224,15 @@ try:
 except KeyboardInterrupt:
     print("Keyboard interrupt")
 
-print("\nAttempts:\t", attempts)
+stats_str = f"Attempts:\t{attempts}\n"
 if borders != []:
-    print("Country hits:\t", country_hits)
-print("Point misses:\t", point_misses)
-print("Point hits:\t", point_hits)
+    stats_str += f"Country hits:\t{country_hits}\n"
+stats_str += f"Point misses:\t{point_misses}\n"
+stats_str += f"Point hits:\t{point_hits}\n"
+stats_str += f"Imagery misses:\t{imagery_misses}\n"
 if not args.no_filter:
-    print("Filter misses:\t", imagery_filtered)
-print("Imagery misses:\t", imagery_misses)
-print("Imagery hits:\t", imagery_hits)
+    stats_str += f"Filtered out:\t{imagery_filtered}\n"
+stats_str += f"Imagery hits:\t{imagery_hits}"
+print(f"\n{stats_str}")
+with open(os.path.join(outdir, "stats.txt"), mode="w") as f:
+    f.write(stats_str)
