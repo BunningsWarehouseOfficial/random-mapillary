@@ -166,6 +166,10 @@ try:
                 if ii >= len(images['features']):
                     break
                 img_id = images['features'][ii]['properties']['id']
+                if img_id in img_ids:
+                    imagery_misses += 1
+                    ii += 1
+                    continue
                 url_request = f"https://graph.mapillary.com/{img_id}?access_token={token}&fields=thumb_original_url"
                 response = requests.get(url_request).json()  # Query the API for the original image URL
                 try:
@@ -209,6 +213,7 @@ try:
                     if os.path.isfile(outfile):
                         print(f"  ========== Got one! Taken from this point: {found + 1} "
                               f"(from {ii + 1} attempts) ==========")
+                        img_ids.append(img_id)
                         imagery_hits += 1
                         found += 1
                         if imagery_hits >= args.images_wanted:
