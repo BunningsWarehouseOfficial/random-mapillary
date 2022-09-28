@@ -1,0 +1,11 @@
+*.jpg
+*.png
+*.json
+
+*.dbf
+*.prj
+*.shp
+*.shx
+*.txt
+
+*.yaml

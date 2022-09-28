@@ -1,0 +1,2 @@
+# Mapillary client API token format: "MLY|___|___"
+token: "INSERT_YOUR_API_KEY_HERE"
