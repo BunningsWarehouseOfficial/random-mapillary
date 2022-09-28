@@ -40,12 +40,12 @@ parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
 )
 parser.add_argument("country", help="ISO 3166-1 Alpha-3 Country Code, 'none', or 'near_global'")
-help_str = "Enter 0 to use the default value given by the country's borders. Min/max lon/lat ignored if 'near_global'."
+help_str = "For default from country borders, enter 0. Ignored if 'near_global'."
 parser.add_argument("min_lon", type=float, help=help_str)
 parser.add_argument("min_lat", type=float, help=help_str)
 parser.add_argument("max_lon", type=float, help=help_str)
 parser.add_argument("max_lat", type=float, help=help_str)
-parser.add_argument("-n", "--images-wanted", type=int, default=10, help="Total number of images wanted.")
+parser.add_argument("-n", "--images-wanted", type=int, default=100, help="Total number of images wanted.")
 parser.add_argument("-b", "--burst", type=int, default=10, help="The maximum number of nearby images downloaded from "
                     "any random geographical point that hits. >1 (e.g. 10) is recommended if using 'near_global'. Note "
                     "that nearby images may be captured by the same camera on the same day, so there is a trade-off "
@@ -59,6 +59,10 @@ args = parser.parse_args()
 
 # TODO: "--all-in-box", '-A' mode where every single image in the box is downloaded, not just random ones; ADD A WARNING
 
+
+if args.images_wanted < 1:
+    raise ValueError("Number of images wanted must be at least 1.")
+# TODO: Allow for -n 0 for only downloading metadata for images near point (require that -j must also be specified)
 
 # Determine if a point is inside a given polygon or not
 # Polygon is a list of (x,y) pairs.
