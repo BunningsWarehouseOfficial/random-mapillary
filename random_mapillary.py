@@ -29,7 +29,7 @@ MAX_TRIES = 10  # Used to set number of maximum attempts at finding a non-filter
 
 with open("api_key.yaml", "r") as ymlfile:
     key = yaml.load(ymlfile, Loader=yaml.FullLoader)
-token = key['token']
+token = key['mly_token']
 mly.set_access_token(token)
 
 parser = argparse.ArgumentParser(
