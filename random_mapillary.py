@@ -12,6 +12,7 @@ from urllib.request import urlopen, urlretrieve
 from datetime import datetime
 import contextlib
 import yaml
+import traceback
 
 import shapefile  # pip install pyshp
 import mapillary.interface as mly  # pip install mapillary
@@ -232,6 +233,9 @@ try:
             pass
 except KeyboardInterrupt:
     print("Keyboard interrupt")
+except Exception:
+    # Make sure that stats are still printed and saved
+    traceback.print_exc()
 
 stats_str = f"Attempts:\t{attempts}\n"
 if borders != []:

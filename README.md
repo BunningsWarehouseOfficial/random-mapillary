@@ -59,7 +59,7 @@ Default number of images *within Australia's borders*.
 ```sh
 python pull_images_2.py AUS 0 0 0 0
 ```
-Large set of *global* images from across most of the Earth's surface. Due to the random methodology and sparse distribution of images globally this will likely *take several hours to execute*.
+Large set of *global* images from across most of the Earth's surface. Due to the random methodology and sparse distribution of images globally this will likely *take many hours to execute*.
 ```sh
 python pull_images.py near_global 0 0 0 0 -n 10000 -b 10
 ```
