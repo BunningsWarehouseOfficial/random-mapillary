@@ -11,10 +11,11 @@ All other keys: Skip
 import argparse
 from glob import glob
 import os
-import cv2 as cv
 import shutil
 from tkinter import filedialog
 from tkinter import *
+
+import cv2 as cv
 
 
 def ResizeWithAspectRatio(image, width=None, height=None, inter=cv.INTER_AREA):
