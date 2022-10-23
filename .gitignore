@@ -9,3 +9,5 @@
 *.txt
 
 *.yaml
+
+__pycache__/**
