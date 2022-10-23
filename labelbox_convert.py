@@ -7,9 +7,12 @@ import numpy as np
 import labelbox
 from labelbox.data.annotation_types import Geometry
 from skimage.measure import regionprops
+import cv2
+
+from real_dmg_quadrants import divide_sign_mask_quadrants
 
 
-damage_weights = {
+dmg_weights = {
     'graffiti': 1.0,
     'cracked': 1.0,
     'obscured_physical': 1.0,
@@ -18,9 +21,9 @@ damage_weights = {
     'other_vandalism': 1.0,
     'rust_or_other_aging': 1.0,
     'chipped_paint': 1.0,
-    'fading_discoloring_0.5': 0.5,
+    'fading_discoloring_0.5': 0.5,  # Perhaps two: 0.6666 and 0.3333?
     'dirt': 1.0,
-    'obscured_shadow_0.8': 0.8
+    'obscured_dark_shadow_0.8': 0.0
 }
 
 parser = argparse.ArgumentParser()
@@ -31,18 +34,27 @@ args = parser.parse_args()
 def get_image_label(label, colors):
     image_np = label.data.value
 
-    # Draw the annotations onto the source image
-    for ii, annotation in enumerate(label.annotations):
-        if isinstance(annotation.value, Geometry):
-            image_np = annotation.value.draw(canvas=image_np,
-                                             color=colors[annotation.name],
-                                             thickness=5)
+    # blank_image = Image.new('RGB', (image_np.shape[1], image_np.shape[0]), (0, 0, 0))
 
-            ##
-            # blank = annotation.value.draw(color=colors[annotation.name],
-            #                               thickness=5)
-            # Image.fromarray(blank.astype(np.uint8)).save(f"{ii}_{annotation.extra['feature_id']}_{label.uid}.png")
-            ##
+    # Draw the annotations onto the source image
+    # for ii, annotation in enumerate(label.annotations):
+    #     if isinstance(annotation.value, Geometry):
+    #         image_np = annotation.value.draw(canvas=image_np,
+    #                                          color=colors[annotation.name],
+    #                                          thickness=5)
+
+    #         ##
+    #         # ann = annotation.value.draw(color=colors[annotation.name],
+    #         #                               thickness=5)
+    #         # Image.fromarray(ann.astype(np.uint8)).save(f"{ii}_{annotation.extra['feature_id']}_{label.uid}.png")
+    #         ##
+
+    #         ##
+    #         blank_image = annotation.value.draw(canvas=(None if ii == 0 else blank_image),
+    #                                             color=colors[annotation.name],
+    #                                             thickness=5)
+    #         ##
+    # Image.fromarray(blank_image.astype(np.uint8)).save(f"blank_{annotation.extra['feature_id']}_{label.uid}.png")
 
     return image_np
 
@@ -56,7 +68,8 @@ def image_masks_dict(label, colors):
                 'is_sign': True,
                 'damages': [],
                 'combined_bbox': None,
-                'total__dmg': None
+                'total_dmg': None,
+                'quad_dmgs': None  # [tl, tr, bl, br]
             } if is_sign else {
                 'mask': annotation.value.draw(color=colors[annotation.name], thickness=5),
                 'feature_id': annotation.extra['feature_id'],
@@ -68,12 +81,17 @@ def image_masks_dict(label, colors):
 def get_mask_properties(mask):
     regions = regionprops(mask)
     for props in regions:
-        cy, cx, _ = props.centroid
+        cent = props.centroid
+        cy, cx = cent[0:2]
         area = props.area  # Area of region pixels, not area of bounding box
         bbox = props.bbox
+        print(bbox)  ##
         miny, minx = bbox[0:2]
-        maxy, maxx = bbox[3:5]
-        ##
+        if len(bbox) == 6:
+            maxy, maxx = bbox[3:5]
+        elif len(bbox) == 4:
+            maxy, maxx = bbox[2:4]
+        ## DEBUG
         # mask[miny, :] = (0, 255, 0)
         # mask[maxy, :] = (0, 255, 0)
         # mask[:, minx] = (0, 255, 0)
@@ -134,21 +152,59 @@ def main():
         # Find bbox for each combined mask
         for mask_id in all_masks[image['ID']]:
             if all_masks[image['ID']][mask_id]['is_sign']:
-                # Get bbox for combined mask
+                # Get bbox for combined mask and create combined mask itself
                 sign_mask = all_masks[image['ID']][mask_id]['mask']
+                sign_mask_cv = cv2.cvtColor(np.array(sign_mask), cv2.COLOR_RGB2BGR)
+                cv2.imshow('sign_mask_cv', sign_mask_cv)
+                cv2.waitKey(0)
                 min_miny, max_maxy, min_minx, max_maxx, sign_mask_area, _, _ = get_mask_properties(sign_mask)
                 total_sign_area = sign_mask_area
                 weighted_dmg_area = 0
                 for dmg in all_masks[image['ID']][mask_id]['damages']:
-                    miny, maxy, minx, maxx, dmg_mask_area, _, _ = get_mask_properties(dmg['mask'])
+                    dmg_mask = cv2.cvtColor(np.array(dmg['mask']), cv2.COLOR_RGB2BGR)
+                    sign_mask_cv = cv2.bitwise_or(sign_mask_cv, dmg_mask)
+                    # cv2.imshow('dmg_mask_cv', dmg_mask)
+                    cv2.imshow('sign_mask_cv', sign_mask_cv)
+                    cv2.waitKey(0)
+
+                    # Calculate total damage
+                    dmg_mask_gray = cv2.cvtColor(dmg_mask, cv2.COLOR_BGR2GRAY)
+                    miny, maxy, minx, maxx, dmg_mask_area, _, _ = get_mask_properties(dmg_mask_gray)
                     min_miny = min(miny, min_miny)
                     max_maxy = max(maxy, max_maxy)
                     min_minx = min(minx, min_minx)
                     max_maxx = max(maxx, max_maxx)
                     total_sign_area += dmg_mask_area
-                    weighted_dmg_area += dmg_mask_area * damage_weights[dmg['damage_type']]
+                    weighted_dmg_area += dmg_mask_area * dmg_weights[dmg['damage_type']]
+
+                # Calculate quadrant-wise damage
+                sign_mask_binary = cv2.threshold(cv2.cvtColor(sign_mask_cv, cv2.COLOR_BGR2GRAY),
+                                                 20, 255, cv2.THRESH_BINARY)[1]
+                dmg_mask_quads = divide_sign_mask_quadrants(sign_mask_binary, f"{mask_id}.png", debug=True, save=True)
+                quad_dmgs = []
+                for quad_mask in dmg_mask_quads:
+                    quad = cv2.bitwise_and(sign_mask_cv, sign_mask_cv, mask=quad_mask)
+                    cv2.imshow('quad', quad)
+                    cv2.waitKey(0)
+                    props = get_mask_properties(quad)
+                    total_quad_sign_area = props[4]
+                    weighted_quad_dmg_area = 0
+                    for dmg in all_masks[image['ID']][mask_id]['damages']:
+                        dmg_mask = cv2.cvtColor(np.array(dmg['mask']), cv2.COLOR_RGB2GRAY)
+                        dmg_mask = cv2.bitwise_and(dmg_mask, dmg_mask, mask=quad_mask)
+                        props = get_mask_properties(dmg_mask)
+                        if props is None:
+                            quad_dmg_mask_area = 0  # The selected damage isn't in this quadrant
+                        else:
+                            quad_dmg_mask_area = props[4]
+                        weighted_quad_dmg_area += quad_dmg_mask_area * dmg_weights[dmg['damage_type']]
+                    quad_dmgs.append(weighted_quad_dmg_area / total_quad_sign_area)
+                print("quad dmgs:", quad_dmgs)  ##
+                print("total dmg:", weighted_dmg_area / total_sign_area)  ##
+
                 all_masks[image['ID']][mask_id]['combined_bbox'] = (min_miny, max_maxy, min_minx, max_maxx)
                 all_masks[image['ID']][mask_id]['total_dmg'] = weighted_dmg_area / total_sign_area
+                all_masks[image['ID']][mask_id]['quad_dmgs'] = quad_dmgs
 
                 if args.debug_viz:
                     vis_images[image['ID']][min_miny, :] = (0, 255, 0)
@@ -163,3 +219,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# TODO: Get quadrant-wise damage (try out regionprops things)
+
+# TODO: Option to exclude obscured_dark_shadow_0.8 and obscured_physical
+
+# TODO: Convert to COCO annotations
