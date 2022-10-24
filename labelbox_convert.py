@@ -1,11 +1,14 @@
 import yaml
 import json
 import argparse
+import os
+from datetime import datetime
 
 from PIL import Image
 import numpy as np
 import labelbox
 from labelbox.data.annotation_types import Geometry
+from labelbox.data.serialization import COCOConverter
 from skimage.measure import regionprops
 import cv2
 
@@ -31,31 +34,59 @@ parser.add_argument("-d", "--debug-viz", action="store_true", help="Debug visual
 args = parser.parse_args()
 
 
-def get_image_label(label, colors):
+def write_label_coco(labels_dict, label_id, coco_img_id, lbox_img_id, img_dims, bounding_axes,
+                     total_dmg, sector_dmgs, damage_type="labelbox_real"):
+    # Bounding axes format: (x_left, x_right, y_top, y_bottom)
+    # Damage sectors format: [tl, tr, bl, br]
+    # img_dims format: (height, width)
+    axes = bounding_axes
+    if next((img for img in labels_dict['images'] if img['id'] == coco_img_id), None) is None:
+        labels_dict['images'].append({
+            "id": coco_img_id,
+            "license": 1,
+            "file_name": f"{lbox_img_id}.png",
+            "height": img_dims[0],
+            "width": img_dims[1],
+            "date_captured": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+    labels_dict['annotations'].append({
+        "id": label_id,
+        "image_id": coco_img_id,
+        "category_id": 1,
+        "bbox": [axes[0], axes[2], axes[1] - axes[0], axes[3] - axes[2]],
+        "area": (axes[1] - axes[0]) * (axes[3] - axes[2]),
+        "segmentation": [],
+        "iscrowd": 0,
+        "damage": total_dmg,
+        "damage_type": damage_type,
+        "sector_damage": sector_dmgs
+    })
+
+def get_image_label(label, colors, out_dir):
     image_np = label.data.value
+    img_id = label.uid
+    Image.fromarray(image_np.astype(np.uint8)).save(f"{out_dir}/{img_id}.png")
 
-    # blank_image = Image.new('RGB', (image_np.shape[1], image_np.shape[0]), (0, 0, 0))
+    blank_image = Image.new('RGB', (image_np.shape[1], image_np.shape[0]), (0, 0, 0))
+    if args.debug_viz:
+        # Draw the annotations onto the source image
+        for ii, annotation in enumerate(label.annotations):
+            if isinstance(annotation.value, Geometry):
+                image_np = annotation.value.draw(canvas=image_np,
+                                                color=colors[annotation.name],
+                                                thickness=5)
 
-    # Draw the annotations onto the source image
-    # for ii, annotation in enumerate(label.annotations):
-    #     if isinstance(annotation.value, Geometry):
-    #         image_np = annotation.value.draw(canvas=image_np,
-    #                                          color=colors[annotation.name],
-    #                                          thickness=5)
+                ## DEBUG
+                ann = annotation.value.draw(color=colors[annotation.name], thickness=5)
+                Image.fromarray(ann.astype(np.uint8)).save(f"{out_dir}/{ii}_{annotation.extra['feature_id']}_{img_id}.png")
+                ##
 
-    #         ##
-    #         # ann = annotation.value.draw(color=colors[annotation.name],
-    #         #                               thickness=5)
-    #         # Image.fromarray(ann.astype(np.uint8)).save(f"{ii}_{annotation.extra['feature_id']}_{label.uid}.png")
-    #         ##
-
-    #         ##
-    #         blank_image = annotation.value.draw(canvas=(None if ii == 0 else blank_image),
-    #                                             color=colors[annotation.name],
-    #                                             thickness=5)
-    #         ##
-    # Image.fromarray(blank_image.astype(np.uint8)).save(f"blank_{annotation.extra['feature_id']}_{label.uid}.png")
-
+                ## DEBUG
+                blank_image = annotation.value.draw(canvas=(None if ii == 0 else blank_image),
+                                                    color=colors[annotation.name],
+                                                    thickness=5)
+                ##
+        Image.fromarray(blank_image.astype(np.uint8)).save(f"{out_dir}/annotated_{annotation.extra['feature_id']}_{img_id}.png")
     return image_np
 
 def image_masks_dict(label, colors):
@@ -85,7 +116,7 @@ def get_mask_properties(mask):
         cy, cx = cent[0:2]
         area = props.area  # Area of region pixels, not area of bounding box
         bbox = props.bbox
-        print(bbox)  ##
+        # print(bbox)  ##
         miny, minx = bbox[0:2]
         if len(bbox) == 6:
             maxy, maxx = bbox[3:5]
@@ -124,23 +155,52 @@ def main():
         'Damage Mask': (255, 0, 0),
     }
 
+    out_dir = f"dataset_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    os.mkdir(out_dir)
+    labels_path = os.path.join(out_dir, "_single_annotations.coco.json")
+    labels_file = open(labels_path, "w")
+
+    # mask_path = f"./{out_dir}/masks/"
+    # image_path = f"./{out_dir}/images/"
+    # coco_labels = COCOConverter.serialize_instances(
+    #     labels,
+    #     image_root=image_path,
+    #     mask_root=mask_path,
+    #     ignore_existing_data=True
+    # )
+
+    classes = ['traffic_sign']
+    labels_dict = {'categories': [], 'images': [], 'annotations': []}
+    labels_dict['categories'] += [{'id': 0, 'name': 'signs', 'supercategory': "none"}]
+    labels_dict['categories'] += [{'id:': ii + 1, 'name': str(c), 'supercategory': "signs"} for ii, c in enumerate(sorted(classes))]
+
     all_masks = {}
     if args.debug_viz:
         vis_images = {}
 
     # Label: https://github.com/Labelbox/labelbox-python/blob/develop/labelbox/data/annotation_types/label.py
+    print("Retrieving images and saving label masks...")
     for label in labels:
         # if label.uid != "cl81ana824ww1071xgtgp6tjy":
         #     continue
+        print(f"  Retrieving image for: {label.uid}", end='\r')
+        value = get_image_label(label, colors, out_dir)
         if args.debug_viz:
-            vis_images[label.uid] = get_image_label(label, colors)
+            vis_images[label.uid] = value
+        print(f"  Retrieving masks for: {label.uid}", end='\r')
         all_masks[label.uid] = image_masks_dict(label, colors)
 
-    with open("labels.json", "r") as f:
+    print(end="\n\r")
+    print("Processing labels...")
+    with open("labels.json", "r") as f:  # Manually downloaded from Labelbox website export
         labels_json = json.load(f)
+    id_mapping = {}
+    curr_ann_id = 0
     for image in labels_json:
-        # if image['ID'] != "cl81ana824ww1071xgtgp6tjy":
-        #     continue
+        if image['ID'] not in id_mapping:
+            id_mapping[image['ID']] = len(id_mapping)
+        coco_img_id = id_mapping[image['ID']]
+        lbox_img_id = image['ID']
 
         # Link damage masks to sign masks
         relations = image['Label']['relationships']
@@ -155,17 +215,21 @@ def main():
                 # Get bbox for combined mask and create combined mask itself
                 sign_mask = all_masks[image['ID']][mask_id]['mask']
                 sign_mask_cv = cv2.cvtColor(np.array(sign_mask), cv2.COLOR_RGB2BGR)
-                cv2.imshow('sign_mask_cv', sign_mask_cv)
-                cv2.waitKey(0)
+                ##
+                # cv2.imshow('sign_mask_cv', sign_mask_cv)
+                # cv2.waitKey(0)
+                ##
                 min_miny, max_maxy, min_minx, max_maxx, sign_mask_area, _, _ = get_mask_properties(sign_mask)
                 total_sign_area = sign_mask_area
                 weighted_dmg_area = 0
                 for dmg in all_masks[image['ID']][mask_id]['damages']:
                     dmg_mask = cv2.cvtColor(np.array(dmg['mask']), cv2.COLOR_RGB2BGR)
                     sign_mask_cv = cv2.bitwise_or(sign_mask_cv, dmg_mask)
+                    ##
                     # cv2.imshow('dmg_mask_cv', dmg_mask)
-                    cv2.imshow('sign_mask_cv', sign_mask_cv)
-                    cv2.waitKey(0)
+                    # cv2.imshow('sign_mask_cv', sign_mask_cv)
+                    # cv2.waitKey(0)
+                    ##
 
                     # Calculate total damage
                     dmg_mask_gray = cv2.cvtColor(dmg_mask, cv2.COLOR_BGR2GRAY)
@@ -176,16 +240,19 @@ def main():
                     max_maxx = max(maxx, max_maxx)
                     total_sign_area += dmg_mask_area
                     weighted_dmg_area += dmg_mask_area * dmg_weights[dmg['damage_type']]
+                total_dmg = weighted_dmg_area / total_sign_area
 
                 # Calculate quadrant-wise damage
                 sign_mask_binary = cv2.threshold(cv2.cvtColor(sign_mask_cv, cv2.COLOR_BGR2GRAY),
                                                  20, 255, cv2.THRESH_BINARY)[1]
-                dmg_mask_quads = divide_sign_mask_quadrants(sign_mask_binary, f"{mask_id}.png", debug=True, save=True)
+                dmg_mask_quads = divide_sign_mask_quadrants(sign_mask_binary, f"{mask_id}.png", debug=False, save=False)
                 quad_dmgs = []
                 for quad_mask in dmg_mask_quads:
                     quad = cv2.bitwise_and(sign_mask_cv, sign_mask_cv, mask=quad_mask)
-                    cv2.imshow('quad', quad)
-                    cv2.waitKey(0)
+                    ##
+                    # cv2.imshow('quad', quad)
+                    # cv2.waitKey(0)
+                    ##
                     props = get_mask_properties(quad)
                     total_quad_sign_area = props[4]
                     weighted_quad_dmg_area = 0
@@ -199,30 +266,44 @@ def main():
                             quad_dmg_mask_area = props[4]
                         weighted_quad_dmg_area += quad_dmg_mask_area * dmg_weights[dmg['damage_type']]
                     quad_dmgs.append(weighted_quad_dmg_area / total_quad_sign_area)
-                print("quad dmgs:", quad_dmgs)  ##
-                print("total dmg:", weighted_dmg_area / total_sign_area)  ##
+                # print("quad dmgs:", quad_dmgs)  ##
+                # print("total dmg:", total_dmg)  ##
 
                 all_masks[image['ID']][mask_id]['combined_bbox'] = (min_miny, max_maxy, min_minx, max_maxx)
                 all_masks[image['ID']][mask_id]['total_dmg'] = weighted_dmg_area / total_sign_area
                 all_masks[image['ID']][mask_id]['quad_dmgs'] = quad_dmgs
 
+                shape = sign_mask_cv.shape
+                h, w = shape[0], shape[1]
                 if args.debug_viz:
-                    vis_images[image['ID']][min_miny, :] = (0, 255, 0)
-                    vis_images[image['ID']][max_maxy, :] = (0, 255, 0)
-                    vis_images[image['ID']][:, min_minx] = (0, 255, 0)
-                    vis_images[image['ID']][:, max_maxx] = (0, 255, 0)
+                    vis_images[image['ID']][max(min_miny, 0), :] = (0, 255, 0)
+                    vis_images[image['ID']][min(max_maxy, h-1), :] = (0, 255, 0)
+                    vis_images[image['ID']][:, max(min_minx, 0)] = (0, 255, 0)
+                    vis_images[image['ID']][:, min(max_maxx, w-1)] = (0, 255, 0)
+
+                # Write to COCO format
+                write_label_coco(
+                    labels_dict,
+                    curr_ann_id,
+                    coco_img_id,
+                    lbox_img_id,
+                    sign_mask_cv.shape,
+                    (min_minx, max_maxx, min_miny, max_maxy),
+                    total_dmg,
+                    quad_dmgs
+                )
+                curr_ann_id += 1
 
     if args.debug_viz:
         for img_id in vis_images:
-            Image.fromarray(vis_images[img_id].astype(np.uint8)).save(f"{img_id}.png")
+            Image.fromarray(vis_images[img_id].astype(np.uint8)).save(f"{out_dir}/{img_id}.png")
+
+    # Finalise COCO labels
+    labels_dict['images'] = sorted(labels_dict['images'], key=lambda x: x['id'])
+    labels_dict['annotations'] = sorted(labels_dict['annotations'], key=lambda x: x['id'])
+    json.dump(labels_dict, labels_file, indent=4)
+    labels_file.close()
 
 
 if __name__ == "__main__":
     main()
-
-
-# TODO: Get quadrant-wise damage (try out regionprops things)
-
-# TODO: Option to exclude obscured_dark_shadow_0.8 and obscured_physical
-
-# TODO: Convert to COCO annotations
