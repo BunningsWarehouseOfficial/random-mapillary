@@ -4,3 +4,6 @@ mly_token: "INSERT_YOUR_API_KEY_HERE"
 # LabelBox SDK API token and project ID
 label_token: "INSERT_YOUR_API_KEY_HERE"
 project_id: "INSERT_YOUR_TOKEN_HERE"
+
+project_id_gtsdb_train: "INSERT_YOUR_TOKEN_HERE"
+project_id_gtsdb_test: "INSERT_YOUR_TOKEN_HERE"

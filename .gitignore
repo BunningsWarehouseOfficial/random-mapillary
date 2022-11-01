@@ -1,6 +1,7 @@
 *.jpg
 *.png
 *.json
+*.npy
 
 *.dbf
 *.prj
