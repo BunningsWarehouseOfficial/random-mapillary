@@ -54,7 +54,7 @@ def write_image_coco(labels_dict, coco_img_id, lbox_img_id, img_dims):
         labels_dict['images'].append({
             "id": coco_img_id,
             "license": 1,
-            "file_name": f"{lbox_img_id}.png",
+            "file_name": f"{lbox_img_id}.jpg",
             "height": img_dims[0],
             "width": img_dims[1],
             "date_captured": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -70,7 +70,7 @@ def write_label_coco(labels_dict, label_id, coco_img_id, lbox_img_id, img_dims, 
         labels_dict['images'].append({
             "id": coco_img_id,
             "license": 1,
-            "file_name": f"{lbox_img_id}.png",
+            "file_name": f"{lbox_img_id}.jpg",
             "height": img_dims[0],
             "width": img_dims[1],
             "date_captured": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -91,7 +91,7 @@ def write_label_coco(labels_dict, label_id, coco_img_id, lbox_img_id, img_dims, 
 def get_image_label(label, colors, out_dir):
     image_np = label.data.value
     img_id = label.uid
-    Image.fromarray(image_np.astype(np.uint8)).save(f"{out_dir}/{img_id}.png")
+    Image.fromarray(image_np.astype(np.uint8)).save(f"{out_dir}/{img_id}.jpg")
 
     blank_image = Image.new('RGB', (image_np.shape[1], image_np.shape[0]), (0, 0, 0))
     if args.debug_viz:
@@ -276,7 +276,10 @@ def main():
             for relation in relations:
                 target_sign = relation['data']['target']
                 source_dmg = relation['data']['source']
-                all_masks[image['ID']][target_sign]['damages'].append(all_masks[image['ID']][source_dmg])
+                try:
+                    all_masks[image['ID']][target_sign]['damages'].append(all_masks[image['ID']][source_dmg])
+                except KeyError:
+                    raise ValueError(f"Damages relation from {source_dmg} is targeting a damage mask, not a sign mask.")
 
             # Make sure image details are always written into labels
             if len(image['Label']['objects']) == 0:  # FIXME: Get real image shape instead of placeholder (-1, -1)
