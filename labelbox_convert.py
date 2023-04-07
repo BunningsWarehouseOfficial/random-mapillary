@@ -8,7 +8,6 @@ from PIL import Image
 import numpy as np
 import labelbox
 from labelbox.data.annotation_types import Geometry
-from labelbox.data.serialization import COCOConverter
 from skimage.measure import regionprops
 import cv2
 
@@ -41,7 +40,8 @@ parser.add_argument(
     action="store_true",
     help="Handle GTSDB training set data from `labels_gtsdb_train.json` and `_single_annotations_train.coco.json`."
 )
-parser.add_argument("--gtsdb-test",
+parser.add_argument(
+    "--gtsdb-test",
     action="store_true",
     help="Handle GTSDB test set data from `labels_gtsdb_test.json` and `_single_annotations_test.coco.json`."
 )
@@ -142,18 +142,11 @@ def get_mask_properties(mask):
         cy, cx = cent[0:2]
         area = props.area  # Area of region pixels, not area of bounding box
         bbox = props.bbox
-        # print(bbox)  ##
         miny, minx = bbox[0:2]
         if len(bbox) == 6:
             maxy, maxx = bbox[3:5]
         elif len(bbox) == 4:
             maxy, maxx = bbox[2:4]
-        ## DEBUG
-        # mask[miny, :] = (0, 255, 0)
-        # mask[maxy, :] = (0, 255, 0)
-        # mask[:, minx] = (0, 255, 0)
-        # mask[:, maxx] = (0, 255, 0)
-        ##
         return miny, maxy, minx, maxx, area, cy, cx
 
 def main():
@@ -189,15 +182,6 @@ def main():
     labels_path = os.path.join(out_dir, "_single_annotations.coco.json")
     labels_file = open(labels_path, "w")
 
-    # mask_path = f"./{out_dir}/masks/"
-    # image_path = f"./{out_dir}/images/"
-    # coco_labels = COCOConverter.serialize_instances(
-    #     labels,
-    #     image_root=image_path,
-    #     mask_root=mask_path,
-    #     ignore_existing_data=True
-    # )
-
     classes = ['traffic_sign']
     labels_dict = {'categories': [], 'images': [], 'annotations': []}
     labels_dict['categories'] += [{'id': 0, 'name': 'signs', 'supercategory': "none"}]
@@ -210,8 +194,6 @@ def main():
     # Label: https://github.com/Labelbox/labelbox-python/blob/develop/labelbox/data/annotation_types/label.py
     print("Retrieving images and saving label masks...")
     for label in labels:
-        # if label.uid != "cl81ana824ww1071xgtgp6tjy":
-        #     continue
         print(f"  Retrieving image for: {label.uid}", end='\r')
         value = get_image_label(label, colors, out_dir)
         if args.debug_viz:
@@ -291,10 +273,6 @@ def main():
                     # Get bbox for combined mask and create combined mask itself
                     sign_mask = all_masks[image['ID']][mask_id]['mask']
                     sign_mask_cv = cv2.cvtColor(np.array(sign_mask), cv2.COLOR_RGB2BGR)
-                    ##
-                    # cv2.imshow('sign_mask_cv', sign_mask_cv)
-                    # cv2.waitKey(0)
-                    ##
                     try:
                         min_miny, max_maxy, min_minx, max_maxx, sign_mask_area, _, _ = get_mask_properties(sign_mask)
                     except (ValueError, TypeError):
@@ -305,11 +283,6 @@ def main():
                     for dmg in all_masks[image['ID']][mask_id]['damages']:
                         dmg_mask = cv2.cvtColor(np.array(dmg['mask']), cv2.COLOR_RGB2BGR)
                         sign_mask_cv = cv2.bitwise_or(sign_mask_cv, dmg_mask)
-                        ##
-                        # cv2.imshow('dmg_mask_cv', dmg_mask)
-                        # cv2.imshow('sign_mask_cv', sign_mask_cv)
-                        # cv2.waitKey(0)
-                        ##
 
                         # Calculate total damage
                         dmg_mask_gray = cv2.cvtColor(dmg_mask, cv2.COLOR_BGR2GRAY)
@@ -329,10 +302,6 @@ def main():
                     quad_dmgs = []
                     for quad_mask in dmg_mask_quads:
                         quad = cv2.bitwise_and(sign_mask_cv, sign_mask_cv, mask=quad_mask)
-                        ##
-                        # cv2.imshow('quad', quad)
-                        # cv2.waitKey(0)
-                        ##
                         props = get_mask_properties(quad)
                         total_quad_sign_area = props[4]
                         weighted_quad_dmg_area = 0
@@ -346,8 +315,6 @@ def main():
                                 quad_dmg_mask_area = props[4]
                             weighted_quad_dmg_area += quad_dmg_mask_area * dmg_weights[dmg['damage_type']]
                         quad_dmgs.append(weighted_quad_dmg_area / total_quad_sign_area)
-                    # print("quad dmgs:", quad_dmgs)  ##
-                    # print("total dmg:", total_dmg)  ##
 
                     all_masks[image['ID']][mask_id]['combined_bbox'] = (min_miny, max_maxy, min_minx, max_maxx)
                     all_masks[image['ID']][mask_id]['total_dmg'] = weighted_dmg_area / total_sign_area
